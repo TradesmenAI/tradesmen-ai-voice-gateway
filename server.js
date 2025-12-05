@@ -27,45 +27,56 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
 const twilio = Twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
 // -------------------------
-// EXPRESS SETUP
+// EXPRESS APP
 // -------------------------
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// -------------------------
-// RENDER HEALTH CHECK
-// -------------------------
+// Health check for Render
 app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
 // -------------------------
-// TWILIO WEBHOOK → returns TwiML
+// TWILIO WEBHOOK
 // -------------------------
 app.post("/voice", (req, res) => {
   const host = req.headers.host;
+
   const twiml = `
 <Response>
   <Connect>
     <Stream url="wss://${host}/stream" />
   </Connect>
-</Response>`;
+</Response>
+`;
 
   res.type("text/xml");
   res.send(twiml);
 });
 
 // -------------------------
-// REALTIME AI WEBSOCKET SERVER
+// WEBSOCKET SERVER
 // -------------------------
 const wss = new WebSocketServer({ noServer: true });
 
 wss.on("connection", async (ws) => {
-  console.log("🔌 Twilio WebSocket connected");
+  console.log("🔌 Twilio connected");
 
+  // Connect to OpenAI Realtime
   const session = openai.realtime.connect({
     model: "gpt-4o-realtime-preview-2024-12-17"
+  });
+
+  // -------------------------
+  // INTRO GREETING (REALISTIC VOICE)
+  // -------------------------
+  session.send({
+    type: "response.create",
+    response: {
+      instructions: "Say: 'Hi, you're through to Tradesmen AI. How can I help?'"
+    }
   });
 
   // Twilio → OpenAI
@@ -79,26 +90,23 @@ wss.on("connection", async (ws) => {
   });
 
   ws.on("close", () => {
-    console.log("❌ Twilio WebSocket disconnected");
+    console.log("❌ Twilio disconnected");
     session.close();
   });
 });
 
 // -------------------------
-// START SERVER
+// UPGRADE FOR WS
 // -------------------------
-const PORT = process.env.PORT || 3000;
-
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+const server = app.listen(10000, () => {
+  console.log("🚀 Server running on port 10000");
 });
 
-// -------------------------
-// HANDLE UPGRADE FOR WSS
-// -------------------------
 server.on("upgrade", (req, socket, head) => {
   if (req.url === "/stream") {
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws);
+    });
   } else {
     socket.destroy();
   }
